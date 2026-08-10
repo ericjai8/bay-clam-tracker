@@ -303,7 +303,7 @@
     try{
       const now = new Date();
       const end = addDays(now, 30);
-      const url = `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=predictions&application=bay_clam_tracker&begin_date=${noaaDate(now)}&end_date=${noaaDate(end)}&datum=MLLW&station=${station.id}&time_zone=lst_ld&units=english&interval=hilo&format=json`;
+      const url = `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=predictions&application=bay_clam_tracker&begin_date=${noaaDate(now)}&end_date=${noaaDate(end)}&datum=MLLW&station=${station.id}&time_zone=lst_ldt&units=english&interval=hilo&format=json`;
       const res = await fetch(url);
       const j = await res.json();
       if(!j.predictions) throw new Error(j.error ? j.error.message : 'no tide data');

@@ -462,7 +462,12 @@
       applyStation(); renderDay();
       return;
     }
-    const newStation = { id, name, lat, lng, parking:'Selected location', species:[], custom:true };
+    const parkingLabel = window.prompt(
+      "What should we call the access point / parking for this spot?\n(Directions will point to this pin's exact location - make sure it's actually where you park, not just the tide gauge itself)",
+      name
+    );
+    if(parkingLabel === null) return; // user cancelled
+    const newStation = { id, name, lat, lng, parking: parkingLabel || name, species:[], custom:true };
     customStations.push(newStation);
     saveCustomStations(customStations);
     STATIONS = BASE_STATIONS.concat(customStations);

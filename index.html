@@ -730,6 +730,20 @@
   document.getElementById('calOverlay').addEventListener('click', (e)=>{
     if(e.target.id==='calOverlay') e.currentTarget.classList.remove('open');
   });
+  let touchStartX = null;
+  const liveAreaEl = document.getElementById('liveArea');
+  liveAreaEl.addEventListener('touchstart', (e)=>{
+    touchStartX = e.touches[0].clientX;
+  }, {passive:true});
+  liveAreaEl.addEventListener('touchend', (e)=>{
+    if(touchStartX===null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    touchStartX = null;
+    if(Math.abs(dx) < 50) return;
+    if(dx < 0 && STATE.dayOffset < 29){ STATE.dayOffset++; renderDay(); }
+    else if(dx > 0 && STATE.dayOffset > 0){ STATE.dayOffset--; renderDay(); }
+  }, {passive:true});
+
   document.getElementById('refreshBtn').addEventListener('click', (e)=>{
     STATE.cache = {}; STATE.weatherCache = {};
     const btn = e.currentTarget;

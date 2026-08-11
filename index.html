@@ -159,8 +159,8 @@
       <table>
         <tr><th>Species</th><th>Size</th><th>Limit</th></tr>
         <tr><td>Gaper (horseneck) &amp; Washington</td><td class="num">none</td><td class="num">10 each</td></tr>
-        <tr><td>&mdash; Humboldt Bay only</td><td class="num">none</td><td class="num">50 combo, &le;25 gaper</td></tr>
-        <tr><td>&mdash; Elkhorn Slough only</td><td class="num">none</td><td class="num">12 combo</td></tr>
+        <tr><td>Humboldt Bay limit (same species)</td><td class="num">none</td><td class="num">50 combo, &le;25 gaper</td></tr>
+        <tr><td>Elkhorn Slough limit (same species)</td><td class="num">none</td><td class="num">12 combo</td></tr>
         <tr><td>Geoduck</td><td class="num">none</td><td class="num">3</td></tr>
         <tr><td>Littleneck / soft-shell / chione / cockle</td><td class="num">1.5 in</td><td class="num">50 combo</td></tr>
         <tr><td>Pismo</td><td class="num">4.5&ndash;5 in</td><td class="num">10</td></tr>
@@ -405,11 +405,14 @@
     const heights = window.map(p=>p.height);
     const minV = Math.min(...heights), maxV = Math.max(...heights);
     const minT = window[0].time, maxT = window[window.length-1].time;
-    const d = catmullPath(window, 340, 55, minV, maxV, minT, maxT);
-    const lowX = ((centerLow.time-minT)/(maxT-minT||1))*340;
-    return `<svg viewBox="0 0 340 60" style="width:100%;height:52px;display:block;">
-      <path d="${d}" fill="none" stroke="var(--foam)" stroke-width="2" opacity="0.85"/>
-      <circle cx="${lowX}" cy="52" r="4" fill="var(--brass)"/>
+    const PAD_X = 14, PAD_Y = 8, W = 312, H = 40;
+    const rawPath = catmullPath(window, W, H, minV, maxV, minT, maxT);
+    const d = rawPath.replace(/(-?\d+\.?\d*),(-?\d+\.?\d*)/g, (m,x,y)=> `${(parseFloat(x)+PAD_X).toFixed(1)},${(parseFloat(y)+PAD_Y).toFixed(1)}`);
+    const lowX = ((centerLow.time-minT)/(maxT-minT||1))*W + PAD_X;
+    const lowY = H + PAD_Y;
+    return `<svg viewBox="0 0 340 56" style="width:100%;height:52px;display:block;overflow:visible;">
+      <path d="${d}" fill="none" stroke="var(--foam)" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+      <circle cx="${lowX}" cy="${lowY}" r="4" fill="var(--brass)"/>
     </svg>`;
   }
 
@@ -439,8 +442,7 @@
         const wx = await fetchWeather(station);
         const dayWx = wx[ymd(low.time)];
         if(dayWx){
-          const info = weatherInfo(dayWx.code);
-          weatherHtml = `<span>${info[1]} ${dayWx.tmax}&deg;F</span><span>&#128168; ${dayWx.wind} mph</span>`;
+          weatherHtml = `<span><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;margin-right:2px;" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13.5V4a2 2 0 1 1 4 0v9.5a4 4 0 1 1-4 0z"/></svg>${dayWx.tmax}&deg;F</span><span><svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;margin-right:2px;" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10a2.5 2.5 0 1 0-2.5-2.5M3 12h15a2.5 2.5 0 1 1-2.5 2.5M3 16h8a2 2 0 1 1-2 2"/></svg>${dayWx.wind} mph</span>`;
         }
       }catch(e){}
 
@@ -491,7 +493,7 @@
     let html = '';
     for(let i=0;i<10;i++){
       const d = addDays(today,i);
-      const label = i===0?'Today':(i===1?'Tmrw':d.toLocaleDateString('en-US',{weekday:'short'}));
+      const label = i===0?'Today':d.toLocaleDateString('en-US',{weekday:'short'});
       let cls = 'day-chip';
       if(i===STATE.dayOffset) cls += ' today';
       else if(i===best.offset) cls += ' best';

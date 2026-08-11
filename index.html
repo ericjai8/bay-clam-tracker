@@ -565,7 +565,7 @@
           <div class="tide-top">
             <div>
               <div class="tide-height">${low.height.toFixed(1)} ft</div>
-              <div class="tide-sub">low tide &middot; ${targetDate.toLocaleDateString('en-US',{weekday:'short'})} ${fmtTime(low.time)}</div>
+              <div class="tide-sub">low tide &middot; ${targetDate.toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric'})} &middot; ${fmtTime(low.time)}</div>
             </div>
             <span class="badge ${cls.key}">${cls.label}</span>
           </div>

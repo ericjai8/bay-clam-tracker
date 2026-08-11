@@ -604,8 +604,13 @@
   });
   document.getElementById('refreshBtn').addEventListener('click', (e)=>{
     STATE.cache = {}; STATE.weatherCache = {};
-    e.currentTarget.classList.add('spin');
-    renderDay().finally(()=> e.currentTarget.classList.remove('spin'));
+    const btn = e.currentTarget;
+    btn.classList.add('spin');
+    const backstop = setTimeout(()=> btn.classList.remove('spin'), 12000);
+    renderDay().finally(()=>{
+      clearTimeout(backstop);
+      btn.classList.remove('spin');
+    });
   });
 
   applyStation();

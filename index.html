@@ -266,6 +266,16 @@
   function loadCache(key){
     try{ const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : null; }catch(e){ return null; }
   }
+  async function fetchWithTimeout(url, ms=10000){
+    const controller = new AbortController();
+    const id = setTimeout(()=>controller.abort(), ms);
+    try{
+      const res = await fetch(url, { signal: controller.signal });
+      return res;
+    }finally{
+      clearTimeout(id);
+    }
+  }
   function timeAgo(ts){
     const min = Math.round((Date.now()-ts)/60000);
     if(min<1) return 'just now';
@@ -306,7 +316,7 @@
       const now = new Date();
       const end = addDays(now, 30);
       const url = `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=predictions&application=bay_clam_tracker&begin_date=${noaaDate(now)}&end_date=${noaaDate(end)}&datum=MLLW&station=${station.id}&time_zone=lst_ldt&units=english&interval=hilo&format=json`;
-      const res = await fetch(url);
+      const res = await fetchWithTimeout(url);
       const j = await res.json();
       if(!j.predictions) throw new Error(j.error ? j.error.message : 'no tide data');
       const pts = j.predictions.map(p=>({ time:new Date(p.t.replace(' ','T')), height:parseFloat(p.v), type:p.type }));
@@ -331,7 +341,7 @@
     const key = `weather_${station.id}`;
     try{
       const url = `https://api.open-meteo.com/v1/forecast?latitude=${station.lat}&longitude=${station.lng}&daily=temperature_2m_max,temperature_2m_min,windspeed_10m_max,weathercode&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=auto&forecast_days=16`;
-      const res = await fetch(url);
+      const res = await fetchWithTimeout(url);
       const j = await res.json();
       const out = {};
       j.daily.time.forEach((t,i)=>{
@@ -351,7 +361,7 @@
     const key = `sun_${lat}_${lng}`;
     try{
       const url = `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lng}&date=${dateISO}&formatted=0`;
-      const res = await fetch(url);
+      const res = await fetchWithTimeout(url);
       const j = await res.json();
       const out = { sunrise:new Date(j.results.sunrise), sunset:new Date(j.results.sunset) };
       saveCache(key, { sunrise:out.sunrise.toISOString(), sunset:out.sunset.toISOString() });

@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-title" content="Clam Tracker">
 <meta name="theme-color" content="#0F2229">
 <title>Bay Clam Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root{
     --navy:#0F2229;
@@ -122,6 +124,19 @@
   .tab .ic{ font-size:19px; line-height:1; }
   .tab.active{ color:var(--brass); }
   a{ color:inherit; }
+
+  .map-overlay{ position:fixed; inset:0; z-index:60; display:none; flex-direction:column; background:var(--navy); }
+  .map-overlay.open{ display:flex; }
+  .map-head{ display:flex; justify-content:space-between; align-items:center; padding: calc(14px + env(safe-area-inset-top)) 16px 12px; background:var(--navy-deep); border-bottom:1px solid var(--line); flex-shrink:0; }
+  .map-head h3{ margin:0; font-family:Georgia,serif; font-size:16px; color:var(--foam); }
+  .map-hint{ font-size:11px; color:rgba(244,241,230,0.5); padding:8px 16px; background:var(--navy-deep); border-bottom:1px solid var(--line); flex-shrink:0; }
+  #leafletMap{ flex:1; }
+  .picker-add{ padding:11px 12px; border-radius:8px; font-size:14px; color:var(--brass); font-weight:700; border-top:1px solid var(--line); margin-top:4px; }
+  .picker-del{ color:rgba(244,241,230,0.4); font-size:12px; padding:2px 6px; }
+  .leaflet-popup-content-wrapper{ background:var(--navy); color:var(--foam); border-radius:10px; }
+  .leaflet-popup-tip{ background:var(--navy); }
+  .leaflet-popup-content{ margin:10px 12px; font-family:-apple-system,sans-serif; }
+  .popup-add-btn{ background:var(--brass); color:var(--navy-deep); border:none; padding:6px 12px; border-radius:8px; font-weight:700; font-size:12px; margin-top:6px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -240,6 +255,15 @@
   </div>
 </div>
 
+<div class="map-overlay" id="mapOverlay">
+  <div class="map-head">
+    <h3>Add a location</h3>
+    <button class="icon-btn" id="mapClose">&#10005;</button>
+  </div>
+  <div class="map-hint">Pan &amp; zoom to find a spot, tap a pin to add it</div>
+  <div id="leafletMap"></div>
+</div>
+
 <script>
   document.querySelectorAll('.tab').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -251,12 +275,20 @@
     });
   });
 
-  const STATIONS = [
-    { id:'9415625', name:'Bodega Harbor', lat:38.3319, lng:-123.0508, parking:'Westshore Rd parking', species:['gaper','littleneck','cockle'] },
-    { id:'9415469', name:'Tomales Bay', lat:38.1892, lng:-122.9647, parking:"Lawson's Landing", species:['gaper','littleneck','geoduck'] },
-    { id:'9418767', name:'Humboldt Bay', lat:40.7670, lng:-124.2170, parking:'North Spit access', species:['gaper','washington','cockle'] },
-    { id:'9413616', name:'Elkhorn Slough', lat:36.8058, lng:-121.7889, parking:'Moss Landing State Beach', species:['gaper'] }
+  const BASE_STATIONS = [
+    { id:'9415625', name:'Bodega Harbor', lat:38.3319, lng:-123.0508, parking:'Westshore Rd parking', species:['gaper','littleneck','cockle'], custom:false }
   ];
+  function loadCustomStations(){
+    try{
+      const raw = localStorage.getItem('customStations');
+      return raw ? JSON.parse(raw) : [];
+    }catch(e){ return []; }
+  }
+  function saveCustomStations(list){
+    try{ localStorage.setItem('customStations', JSON.stringify(list)); }catch(e){}
+  }
+  let customStations = loadCustomStations();
+  let STATIONS = BASE_STATIONS.concat(customStations);
 
   const STATE = { stationIndex:0, dayOffset:0, cache:{}, weatherCache:{}, days:[], stale:false, staleAt:null };
 
@@ -375,6 +407,79 @@
       }
       throw e;
     }
+  }
+
+  let leafletMap = null, markerLayer = null;
+  let noaaStationList = null;
+
+  async function getNoaaStationList(){
+    if(noaaStationList) return noaaStationList;
+    try{
+      const cached = loadCache('noaa_station_list');
+      if(cached){ noaaStationList = cached.data; return noaaStationList; }
+    }catch(e){}
+    const res = await fetchWithTimeout('https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=tidepredictions&units=english', 15000);
+    const j = await res.json();
+    noaaStationList = j.stations.filter(s=> s.lat && s.lng);
+    saveCache('noaa_station_list', noaaStationList);
+    return noaaStationList;
+  }
+
+  function openMapPicker(){
+    document.getElementById('mapOverlay').classList.add('open');
+    const s = STATIONS[STATE.stationIndex];
+    if(!leafletMap){
+      leafletMap = L.map('leafletMap').setView([s.lat, s.lng], 9);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
+      }).addTo(leafletMap);
+      markerLayer = L.layerGroup().addTo(leafletMap);
+      leafletMap.on('moveend', refreshMapMarkers);
+    }
+    setTimeout(()=>{ leafletMap.invalidateSize(); refreshMapMarkers(); }, 150);
+  }
+
+  async function refreshMapMarkers(){
+    if(!leafletMap) return;
+    let list;
+    try{ list = await getNoaaStationList(); }catch(e){ return; }
+    const b = leafletMap.getBounds();
+    markerLayer.clearLayers();
+    const visible = list.filter(s=> b.contains([parseFloat(s.lat), parseFloat(s.lng)])).slice(0, 80);
+    visible.forEach(s=>{
+      const lat = parseFloat(s.lat), lng = parseFloat(s.lng);
+      const marker = L.marker([lat, lng]).addTo(markerLayer);
+      const safeName = s.name.replace(/'/g, "&#39;");
+      marker.bindPopup(`<strong>${s.name}</strong><br><button class="popup-add-btn" onclick="addCustomStation('${s.id}','${safeName}',${lat},${lng})">Add to my locations</button>`);
+    });
+  }
+
+  window.addCustomStation = function(id, name, lat, lng){
+    if(STATIONS.some(st=> st.id===id)){
+      const idx = STATIONS.findIndex(st=> st.id===id);
+      STATE.stationIndex = idx; STATE.dayOffset = 0;
+      document.getElementById('mapOverlay').classList.remove('open');
+      applyStation(); renderDay();
+      return;
+    }
+    const newStation = { id, name, lat, lng, parking:'Selected location', species:[], custom:true };
+    customStations.push(newStation);
+    saveCustomStations(customStations);
+    STATIONS = BASE_STATIONS.concat(customStations);
+    STATE.stationIndex = STATIONS.length - 1;
+    STATE.dayOffset = 0;
+    document.getElementById('mapOverlay').classList.remove('open');
+    applyStation();
+    renderDay();
+  };
+
+  function removeCustomStation(id){
+    customStations = customStations.filter(s=> s.id!==id);
+    saveCustomStations(customStations);
+    STATIONS = BASE_STATIONS.concat(customStations);
+    if(STATE.stationIndex >= STATIONS.length) STATE.stationIndex = 0;
+    applyStation();
+    renderDay();
   }
 
   function bestLowForDay(pts, date){
@@ -557,16 +662,31 @@
   function renderPicker(){
     const picker = document.getElementById('picker');
     picker.innerHTML = STATIONS.map((s,i)=>
-      `<div class="picker-item${i===STATE.stationIndex?' sel':''}" data-idx="${i}">${s.name}${i===STATE.stationIndex?' &#10003;':''}</div>`
-    ).join('');
+      `<div class="picker-item${i===STATE.stationIndex?' sel':''}" data-idx="${i}">
+        <span>${s.name}${i===STATE.stationIndex?' &#10003;':''}</span>
+        ${s.custom?`<span class="picker-del" data-del="${s.id}">&#10005;</span>`:''}
+      </div>`
+    ).join('') + `<div class="picker-add" id="pickerAddBtn">+ Add a location</div>`;
     picker.querySelectorAll('.picker-item').forEach(item=>{
-      item.addEventListener('click', ()=>{
+      item.addEventListener('click', (e)=>{
+        if(e.target.dataset.del) return;
         STATE.stationIndex = parseInt(item.dataset.idx);
         STATE.dayOffset = 0;
         picker.style.display='none';
         applyStation();
         renderDay();
       });
+    });
+    picker.querySelectorAll('[data-del]').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        removeCustomStation(btn.dataset.del);
+        renderPicker();
+      });
+    });
+    document.getElementById('pickerAddBtn').addEventListener('click', ()=>{
+      picker.style.display='none';
+      openMapPicker();
     });
   }
 
@@ -598,6 +718,9 @@
   });
   document.getElementById('calClose').addEventListener('click', ()=>{
     document.getElementById('calOverlay').classList.remove('open');
+  });
+  document.getElementById('mapClose').addEventListener('click', ()=>{
+    document.getElementById('mapOverlay').classList.remove('open');
   });
   document.getElementById('calOverlay').addEventListener('click', (e)=>{
     if(e.target.id==='calOverlay') e.currentTarget.classList.remove('open');

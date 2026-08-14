@@ -79,7 +79,12 @@
   .badge.go{ background:var(--good); color:#0F2229; }
   .badge.caution{ background:var(--brass); color:#0F2229; }
   .badge.skip{ background:var(--alert); color:var(--foam); }
-  .curve-wrap{ margin:8px 0; }
+  .curve-wrap{ margin:8px 0; position:relative; }
+  .now-pulse{ animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{ opacity:1; r:4; } 50%{ opacity:0.4; r:6.5; } }
+  .tide-status{ font-size:12px; color:rgba(244,241,230,0.7); display:flex; align-items:center; gap:5px; margin:2px 0 4px; }
+  .tide-status .arrow-up{ color:var(--good); }
+  .tide-status .arrow-down{ color:var(--brass); }
   .dig-box{ background:rgba(199,123,59,0.12); border-radius:10px; padding:10px 12px; margin:10px 0; }
   .dig-box .lbl{ font-size:10.5px; color:var(--mud); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px; }
   .dig-box .val{ font-size:15px; font-weight:700; color:var(--foam); }
@@ -321,6 +326,22 @@
   function ymd(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
   function noaaDate(d){ return d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate()); }
   function fmtTime(d){ return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }
+  function fmtDuration(ms){
+    const totalMin = Math.max(0, Math.round(ms/60000));
+    const h = Math.floor(totalMin/60), m = totalMin%60;
+    return h>0 ? `${h}h ${m}m` : `${m}m`;
+  }
+  function tideStatus(pts){
+    const now = new Date();
+    let prev=null, next=null;
+    for(let i=0;i<pts.length;i++){
+      if(pts[i].time<=now) prev=pts[i];
+      if(pts[i].time>now){ next=pts[i]; break; }
+    }
+    if(!prev || !next) return null;
+    const rising = next.height > prev.height;
+    return { rising, next, msUntil: next.time-now, prev };
+  }
   function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
   function sameDay(a,b){ return a.toDateString()===b.toDateString(); }
 
@@ -508,7 +529,7 @@
     return d;
   }
 
-  function buildCurve(pts, centerLow){
+  function buildCurve(pts, centerLow, showNow){
     const idx = pts.indexOf(centerLow);
     const window = pts.slice(Math.max(0,idx-2), idx+3);
     if(window.length<2) return '';
@@ -520,9 +541,29 @@
     const d = rawPath.replace(/(-?\d+\.?\d*),(-?\d+\.?\d*)/g, (m,x,y)=> `${(parseFloat(x)+PAD_X).toFixed(1)},${(parseFloat(y)+PAD_Y).toFixed(1)}`);
     const lowX = ((centerLow.time-minT)/(maxT-minT||1))*W + PAD_X;
     const lowY = H + PAD_Y;
+
+    let nowMarker = '';
+    if(showNow){
+      const now = new Date();
+      if(now >= minT && now <= maxT){
+        let a=null,b=null;
+        for(let i=0;i<window.length-1;i++){
+          if(window[i].time<=now && window[i+1].time>=now){ a=window[i]; b=window[i+1]; break; }
+        }
+        if(a && b){
+          const frac = (now-a.time)/(b.time-a.time||1);
+          const hgt = a.height + (b.height-a.height)*frac;
+          const nowX = ((now-minT)/(maxT-minT||1))*W + PAD_X;
+          const nowY = (H - ((hgt-minV)/(maxV-minV||1))*H) + PAD_Y;
+          nowMarker = `<circle class="now-pulse" cx="${nowX}" cy="${nowY}" r="4" fill="var(--foam)" stroke="var(--navy)" stroke-width="1.5"/>`;
+        }
+      }
+    }
+
     return `<svg viewBox="0 0 340 56" style="width:100%;height:52px;display:block;overflow:visible;">
       <path d="${d}" fill="none" stroke="var(--foam)" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
       <circle cx="${lowX}" cy="${lowY}" r="4" fill="var(--brass)"/>
+      ${nowMarker}
     </svg>`;
   }
 
@@ -547,6 +588,14 @@
 
       const cls = classify(low.height, legalOk);
 
+      let statusHtml = '';
+      if(STATE.dayOffset===0){
+        const status = tideStatus(pts);
+        if(status){
+          statusHtml = `<div class="tide-status"><span class="${status.rising?'arrow-up':'arrow-down'}">${status.rising?'&#8593;':'&#8595;'}</span>${status.rising?'Rising':'Falling'} &middot; ${status.next.type==='H'?'high':'low'} in ${fmtDuration(status.msUntil)}</div>`;
+        }
+      }
+
       let weatherHtml = '';
       try{
         const wx = await fetchWeather(station);
@@ -569,7 +618,8 @@
             </div>
             <span class="badge ${cls.key}">${cls.label}</span>
           </div>
-          <div class="curve-wrap">${buildCurve(pts, low)}</div>
+          ${statusHtml}
+          <div class="curve-wrap">${buildCurve(pts, low, STATE.dayOffset===0)}</div>
           ${digBox}
           <div class="info-row">
             <span><svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:-3px;margin-right:2px;" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18"/><path d="M6.5 18a5.5 5.5 0 0 1 11 0"/><path d="M12 13V6"/><path d="M8 9l4-4 4 4" stroke-width="2.3"/></svg>${fmtTime(sun.sunrise)}</span>
